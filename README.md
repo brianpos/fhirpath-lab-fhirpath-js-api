@@ -2,6 +2,16 @@
 
 A Node.js TypeScript API server for experimenting with FHIRPath expressions using the `fhirpath` npm package.
 
+## Project Structure
+
+```
+src/
+├── index.ts           # Main Express server and routes
+├── fhirpath-service.ts # FHIRPath evaluation logic
+├── types.ts           # TypeScript type definitions
+└── utils.ts           # Utility functions (OperationOutcome creation)
+```
+
 ## Setup
 
 1. Install dependencies:
@@ -31,53 +41,70 @@ The server will run on `http://localhost:3000` by default.
 ### GET /
 Returns basic information about the API and available endpoints.
 
-### POST /fhirpath
-Evaluates a FHIRPath expression against provided FHIR data.
+### GET /health
+Health check endpoint.
 
-**Request Body:**
+### POST /$fhirpath-r5
+Evaluates a FHIRPath expression against provided FHIR data using FHIR R5 model.
+
+**Request Body (FHIR Parameters resource):**
 ```json
 {
-  "expression": "name.given",
-  "data": {
-    "resourceType": "Patient",
-    "name": [
-      {
-        "given": ["John"],
-        "family": "Doe"
+  "resourceType": "Parameters",
+  "parameter": [
+    {
+      "name": "expression",
+      "valueString": "Patient.name.given"
+    },
+    {
+      "name": "resource",
+      "resource": {
+        "resourceType": "Patient",
+        "name": [
+          {
+            "given": ["John"],
+            "family": "Doe"
+          }
+        ]
       }
-    ]
-  }
+    }
+  ]
 }
 ```
 
-**Response:**
+**Response (FHIR Parameters resource):**
 ```json
 {
-  "expression": "name.given",
-  "result": [["John"]],
-  "success": true
-}
-```
-
-## Example Usage
-
-You can test the API using curl, Postman, or any HTTP client:
-
-```bash
-curl -X POST http://localhost:3000/fhirpath \
-  -H "Content-Type: application/json" \
-  -d '{
-    "expression": "name.family",
-    "data": {
-      "resourceType": "Patient",
-      "name": [
+  "resourceType": "Parameters",
+  "parameter": [
+    {
+      "name": "parameters",
+      "part": [
         {
-          "given": ["John"],
-          "family": "Doe"
+          "name": "evaluator",
+          "valueString": "fhirpath.js-4.5.0 (r5)"
+        },
+        {
+          "name": "expression",
+          "valueString": "Patient.name.given"
+        },
+        {
+          "name": "resource",
+          "resource": { ... }
+        }
+      ]
+    },
+    {
+      "name": "result",
+      "part": [
+        {
+          "name": "string",
+          "valueString": "John"
         }
       ]
     }
-  }'
+  ]
+}
 ```
 
 ## Scripts
@@ -87,10 +114,17 @@ curl -X POST http://localhost:3000/fhirpath \
 - `npm run dev` - Start development server with auto-reload
 - `npm run watch` - Watch for TypeScript changes and recompile
 
+## Debugging in VS Code
+
+The project includes VS Code launch configurations for debugging:
+- **Debug API Server**: Builds and debugs the compiled JavaScript
+- **Debug with ts-node**: Debugs TypeScript directly without compilation
+
 ## Dependencies
 
 - **express**: Web framework for Node.js
 - **fhirpath**: FHIRPath implementation for JavaScript
 - **cors**: Enable CORS for cross-origin requests
+- **@types/fhir**: TypeScript types for FHIR resources
 - **typescript**: TypeScript compiler and tooling
 - **ts-node-dev**: Development tool with TypeScript support and auto-restart
