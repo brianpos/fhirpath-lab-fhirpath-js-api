@@ -1,0 +1,35 @@
+{
+    "name": "fhirpath-js-api",
+    "version": "1.0.0",
+    "description": "A Node.js API for FHIR path experimentation",
+    "main": "dist/index.js",
+    "scripts": {
+        "build": "tsc",
+        "start": "node dist/index.js",
+        "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+        "watch": "tsc --watch",
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "keywords": [
+        "fhir",
+        "fhirpath",
+        "api",
+        "express",
+        "nodejs"
+    ],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "@types/fhir": "^0.0.41",
+        "cors": "^2.8.5",
+        "express": "^5.1.0",
+        "fhirpath": "^4.5.0"
+    },
+    "devDependencies": {
+        "@types/cors": "^2.8.19",
+        "@types/express": "^5.0.3",
+        "@types/node": "^24.0.10",
+        "ts-node-dev": "^2.0.0",
+        "typescript": "^5.8.3"
+    }
+}
