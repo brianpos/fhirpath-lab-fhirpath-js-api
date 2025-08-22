@@ -208,7 +208,7 @@ export async function processFhirPathRequest(req: Request, res: Response) {
 
         // push the results into the parameters resource
         const finalResult = debugTraceOutput[debugTraceOutput.length - 1];
-        if (finalResult.values && finalResult.values.length > 0) {
+        if (finalResult && finalResult.values && finalResult.values.length > 0) {
             finalResult.values.forEach((item: any) => {
                 let retVal: ParametersParameter = {
                     name: item.fhirNodeDataType ?? item.valueType ?? 'string',
@@ -216,6 +216,17 @@ export async function processFhirPathRequest(req: Request, res: Response) {
                 SetParameterValue(retVal, item, true);
                 result.parameter![1].part!.push(retVal);
             });
+        } else {
+            // Fallback to the legacy result returned in the data variable
+            if (data && data.length > 0) {
+                data.forEach((item: any) => {
+                    let retVal: ParametersParameter = {
+                        name: item.fhirNodeDataType ?? item.valueType ?? 'string',
+                    };
+                    SetParameterValue(retVal, item, true);
+                    result.parameter![1].part!.push(retVal);
+                });
+            }
         }
 
         // inject the trace() data
