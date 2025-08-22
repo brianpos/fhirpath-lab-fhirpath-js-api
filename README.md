@@ -10,9 +10,13 @@ Specifically it implements the API defined to run with the Fhirpath-lab:
 src/
 ├── index.ts           # Main Express server and routes
 ├── fhirpath-service.ts # FHIRPath evaluation logic
-└── utils.ts           # Utility functions (OperationOutcome creation)
+├── utils.ts           # Utility functions (OperationOutcome creation)
+├── debug-tracer.ts    # Advanced FHIRPath expression debugging and tracing
+└── types.d.ts         # TypeScript definitions extending the fhirpath library
 .vscode/
 └── launch.json        # VS Code debugging configurations
+.github/
+└── copilot-instructions.md # AI coding agent instructions
 ```
 
 ## Setup
@@ -70,10 +74,24 @@ Evaluates a FHIRPath expression against provided FHIR data using FHIR R5 model.
           }
         ]
       }
+    },
+    {
+      "name": "variables",
+      "part": [
+        {
+          "name": "myVar",
+          "valueString": "example"
+        }
+      ]
     }
   ]
 }
 ```
+
+**Parameters:**
+- **expression** (required): FHIRPath expression to evaluate
+- **resource** (required): FHIR resource to evaluate against
+- **variables** (optional): Environment variables for FHIRPath evaluation with escape sequence support
 
 **Response (FHIR Parameters resource):**
 ```json
@@ -85,15 +103,19 @@ Evaluates a FHIRPath expression against provided FHIR data using FHIR R5 model.
       "part": [
         {
           "name": "evaluator",
-          "valueString": "fhirpath.js-4.5.0 (r5)"
+          "valueString": "fhirpath.js-4.5.1 (r5)"
         },
         {
           "name": "expression",
           "valueString": "Patient.name.given"
         },
         {
-          "name": "resource",
-          "resource": { ... }
+          "name": "parseDebugTree",
+          "valueString": "{ ... }"
+        },
+        {
+          "name": "parseDebugTreeJs",
+          "valueString": "{ ... }"
         }
       ]
     },
@@ -105,10 +127,29 @@ Evaluates a FHIRPath expression against provided FHIR data using FHIR R5 model.
           "valueString": "John"
         }
       ]
+    },
+    {
+      "name": "debug-trace",
+      "part": [
+        {
+          "name": "0,19,Patient.name.given",
+          "part": [
+            {
+              "name": "string",
+              "valueString": "John"
+            }
+          ]
+        }
+      ]
     }
   ]
 }
 ```
+
+The response includes:
+- **parseDebugTree**: Transformed AST for FHIRPath Lab integration
+- **parseDebugTreeJs**: Raw fhirpath.js AST
+- **debug-trace**: Detailed execution trace with focus variables and results
 
 ## Scripts
 
@@ -147,15 +188,19 @@ All debug configurations use port 3001 by default. You can change this in the la
 - **Modular Architecture**: Separated concerns with dedicated service modules
 - **TypeScript Support**: Full TypeScript implementation with proper type definitions
 - **FHIR R5 Support**: Uses FHIR R5 model for FHIRPath evaluation
+- **Advanced Debug Tracing**: Sophisticated FHIRPath expression debugging with execution traces
+- **AST Processing**: Custom AST transformation for FHIRPath Lab integration
+- **Variable Support**: FHIRPath environment variables with escape sequence handling
 - **Comprehensive Logging**: Debug logging for request processing and FHIRPath evaluation
 - **Error Handling**: Proper FHIR OperationOutcome responses for errors
 - **VS Code Integration**: Multiple debugging configurations for different development needs
+- **FHIR Content Types**: Support for both application/json and application/fhir+json
 
 ## Dependencies
 
 ### Runtime Dependencies
-- **express**: Web framework for Node.js
-- **fhirpath**: FHIRPath implementation for JavaScript (v4.5.0+)
+- **express**: Web framework for Node.js (v5.1.0+)
+- **fhirpath**: FHIRPath implementation for JavaScript (v4.5.1+)
 - **cors**: Enable CORS for cross-origin requests
 - **@types/fhir**: TypeScript types for FHIR resources
 
@@ -173,8 +218,11 @@ The project follows a clean separation of concerns:
 - **index.ts**: Express server setup, middleware, and route definitions
 - **fhirpath-service.ts**: Core FHIRPath evaluation logic and request processing
 - **utils.ts**: Utility functions for FHIR operations (OperationOutcome creation, parameter value population)
+- **debug-tracer.ts**: Advanced FHIRPath expression debugging and tracing system
+- **types.d.ts**: TypeScript definitions extending the fhirpath library
 
 This modular structure makes the code:
 - Easy to test (business logic separated from HTTP concerns)
 - Maintainable (clear responsibilities for each module)
 - Extensible (easy to add new FHIRPath operations or endpoints)
+- Debuggable (comprehensive tracing and AST analysis capabilities)
