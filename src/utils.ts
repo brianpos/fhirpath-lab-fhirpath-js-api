@@ -2,6 +2,7 @@
 
 import { Coding, OperationOutcomeIssue, Parameters, ParametersParameter } from "fhir/r4b";
 import { TypeInfo, FP_DateTime, FP_Time, FP_Date, FP_Instant, FP_Quantity } from "fhirpath/src/types";
+import fhirpath_r5_model from "fhirpath/fhir-context/r5";
 
 /**
  * Creates a FHIR OperationOutcome resource for error responses
@@ -63,6 +64,9 @@ export function populateParameterValue(item: any, result: Parameters) {
         retVal.valueInteger = item.data;
       if (item.fhirNodeDataType === 'decimal')
         retVal.valueDecimal = item.data;
+      if (fhirpath_r5_model.type2Parent[item.fhirNodeDataType] === 'Resource' || fhirpath_r5_model.type2Parent[item.fhirNodeDataType] === 'DomainResource') {
+        retVal.resource = item.data;
+      }
     } else {
       if (typeName === 'String')
         retVal.valueString = item;

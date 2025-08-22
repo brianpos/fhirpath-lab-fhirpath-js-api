@@ -1,21 +1,21 @@
 // FHIRPath evaluation service
 
-import fhirpath, { NoAsyncOptions } from "fhirpath";
+import fhirpath, { AsyncOptions } from "fhirpath";
 import express, { Request, Response } from 'express';
 import { TypeInfo, FP_DateTime, FP_Time, FP_Date, FP_Instant, FP_Quantity } from "fhirpath/src/types";
 import { CreateOperationOutcome, populateParameterValue } from './utils'
-import { OperationOutcome, Parameters, ParametersParameter, FhirResource } from 'fhir/r4b'
+import { OperationOutcome, Parameters, ParametersParameter, FhirResource, Extension } from 'fhir/r4b'
 import fhirpath_r5_model from "fhirpath/fhir-context/r5";
 
 // Parameter extraction helper
 interface ExtractedParameters {
-  [key: string]: any
+  [key: string]: string | boolean | FhirResource | ParametersParameter[] | Extension[] | undefined;
 }
 
 /**
  * Main function to process FHIRPath requests
  */
-export function processFhirPathRequest(req: Request, res: Response) {
+export async function processFhirPathRequest(req: Request, res: Response) {
     try {
         console.log('=== FHIRPath Request Debug ===')
         console.log('Method:', req.method)
@@ -46,7 +46,7 @@ export function processFhirPathRequest(req: Request, res: Response) {
         // Extract parameters
         let parameters: ExtractedParameters = {}
         inputParameters.parameter?.forEach((param: ParametersParameter) => {
-            parameters[param.name] = param.valueString || param.valueBoolean || param.resource || param.part
+            parameters[param.name] = param.valueString || param.valueBoolean || param.resource || param.part || param.extension
         })
 
         // Validate required parameters
@@ -79,7 +79,7 @@ export function processFhirPathRequest(req: Request, res: Response) {
                         },
                         {
                             name: 'resource',
-                            resource: parameters.resource as FhirResource
+                            // resource: parameters.resource as FhirResource
                         }
                     ]
                 },
@@ -93,10 +93,18 @@ export function processFhirPathRequest(req: Request, res: Response) {
 
         let expression = parameters.expression as string;
         let fhirData = parameters.resource as FhirResource;
+        if (!fhirData) {
+            // read the json from the extension if that's there
+            const extensions = parameters.resource as Extension[] | undefined;
+            const extension = extensions?.find(ext => ext.url === 'http://fhir.forms-lab.com/StructureDefinition/json-value');
+            if (extension) {
+                fhirData = JSON.parse(extension.valueString!) as FhirResource;
+            }
+        }
         console.log('Evaluating FHIRPath expression: ', expression);
         let environment: Record<string, any> = { resource: fhirData, rootResource: fhirData };
-        let options: NoAsyncOptions = {
-            traceFn: (value, label) => {
+        let options: AsyncOptions = {
+            traceFn: (value: any, label: string) => {
                 if (label === 'TESTING_RESULT') {
                     console.log('result: ', value);
                     if (Array.isArray(value)) {
@@ -108,13 +116,15 @@ export function processFhirPathRequest(req: Request, res: Response) {
                     }
                 }
                 else {
-                    console.log("trace: ", label)
+                    console.log("trace: ", label, value);
                 }
             },
-            async: false,
+            async: true,
         };
         let data = fhirpath.evaluate(fhirData, 'select(\n' + expression + `\n).trace('TESTING_RESULT')`, environment, fhirpath_r5_model, options);
-
+        if (data instanceof Promise){
+            data = await data;
+        }
         console.log('FHIRPath evaluation result:', data);
 
         res.setHeader('Content-Type', 'application/fhir+json')

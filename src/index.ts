@@ -51,8 +51,8 @@ app.get('/health', (req: Request, res: Response) => {
 });
 
 // FHIRPath evaluation
-app.post('/$fhirpath-r5', (req: Request, res: Response) => {
-    processFhirPathRequest(req, res);
+app.post('/$fhirpath-r5', async (req: Request, res: Response) => {
+    await processFhirPathRequest(req, res);
 });
 
 
