@@ -24,12 +24,12 @@
         "@types/fhir": "^0.0.41",
         "cors": "^2.8.5",
         "express": "^5.1.0",
-        "fhirpath": "^4.5.0"
+        "fhirpath": "^4.5.1"
     },
     "devDependencies": {
         "@types/cors": "^2.8.19",
         "@types/express": "^5.0.3",
-        "@types/node": "^24.0.10",
+        "@types/node": "^24.1.0",
         "ts-node-dev": "^2.0.0",
         "typescript": "^5.8.3"
     }
