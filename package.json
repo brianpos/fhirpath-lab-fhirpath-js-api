@@ -21,6 +21,7 @@
     "author": "",
     "license": "ISC",
     "dependencies": {
+        "@reasonhealth/fhirpath": "^0.2.0",
         "@types/fhir": "^0.0.41",
         "cors": "^2.8.5",
         "express": "^5.1.0",

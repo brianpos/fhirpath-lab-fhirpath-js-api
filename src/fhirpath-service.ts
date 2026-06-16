@@ -1,14 +1,10 @@
 // FHIRPath evaluation service
 
-import fhirpath, { AsyncOptions } from "fhirpath";
+import { evaluateExpression, parseExpression, version } from "@reasonhealth/fhirpath";
 import express, { Request, Response } from 'express';
-// Import types from the local demo types file or use any for now
-// import { TypeInfo, FP_DateTime, FP_Time, FP_Date, FP_Instant, FP_Quantity } from "./types";
-import { FP_Date, FP_DateTime, FP_Instant, FP_Quantity, FP_Time, ResourceNode } from "fhirpath/src/types";
-import { CreateOperationOutcome, populateParameterValue } from './utils'
-import { OperationOutcome, Parameters, ParametersParameter, FhirResource, Extension } from 'fhir/r4b'
-import fhirpath_r5_model from "fhirpath/fhir-context/r5";
-import { debugTracer, formatTrace, fpjsNode, IDebugTraceValue, ITraceValue, nodeName, stringifySafe, ToTraceValue } from "./debug-tracer";
+import { CreateOperationOutcome } from './utils'
+import { Parameters, ParametersParameter, FhirResource, Extension } from 'fhir/r4b'
+import { stringifySafe } from "./debug-tracer";
 
 // Parameter extraction helper
 interface ExtractedParameters {
@@ -74,7 +70,7 @@ export async function processFhirPathRequest(req: Request, res: Response) {
                     part: [
                         {
                             name: 'evaluator',
-                            valueString: `fhirpath.js-` + fhirpath.version + ` (r5)`
+                            valueString: `@reasonhealth/fhirpath-${version()} (wasm)`
                         },
                         {
                             name: 'expression',
@@ -105,34 +101,28 @@ export async function processFhirPathRequest(req: Request, res: Response) {
             }
         }
 
+        // Parse the expression using WASM
+        const parseResult = parseExpression(expression, { format: 'json' });
+        if (!parseResult.success || !parseResult.value) {
+            return res.status(400).json(
+                CreateOperationOutcome('error', 'invalid', `Failed to parse expression: ${parseResult.error || 'Unknown error'}`)
+            );
+        }
+
         // inject the parsed AST into the parameters
-        const ast = fhirpath.parse(expression).children[0].children[0];
-        const rawAST = JSON.stringify(ast, null, 2);
         result.parameter![0].part!.push({
             name: 'parseDebugTree',
-            valueString: JSON.stringify(ConvertFhirPathJsToAst(ast), null, 2)
+            valueString: JSON.stringify(parseResult.value, null, 2)
         });
         result.parameter![0].part!.push({
             name: 'parseDebugTreeJs',
-            valueString: rawAST
+            valueString: JSON.stringify(parseResult.value, null, 2)
         });
 
         console.log('Evaluating FHIRPath expression: ', expression);
+        
+        // Build environment with variables
         let environment: Record<string, any> = { resource: fhirData, rootResource: fhirData };
-        let debugTraceOutput: IDebugTraceValue[] = [];
-        let traceData: { label: string, value: ITraceValue[] }[] = [];
-        let options: AsyncOptions = {
-            traceFn: (value: any, label: string) => {
-                console.log("trace: ", label, value);
-                if (Array.isArray(value)) {
-                    traceData.push({ label, value: value.map(ToTraceValue) });
-                } else {
-                    traceData.push({ label, value: [ToTraceValue(value)] });
-                }
-            },
-            // debugger: debugTracer(debugTraceOutput),
-            async: true,
-        };
 
         // read the variables from the parameters
         if (parameters.variables && Array.isArray(parameters.variables)) {
@@ -158,8 +148,6 @@ export async function processFhirPathRequest(req: Request, res: Response) {
                                     return submatch;
                             }
                             });
-                    // and also do the replacements.
-
                 }
                 if (name.startsWith("'")){
                     name = name.slice(1, -1).replace(/(^'|'$)/g, "")
@@ -180,8 +168,6 @@ export async function processFhirPathRequest(req: Request, res: Response) {
                                     return submatch;
                             }
                             });
-                    // and also do the replacements.
-
                 }
                 environment[name] = varParam.valueString
                     || varParam.valueBoolean
@@ -194,108 +180,78 @@ export async function processFhirPathRequest(req: Request, res: Response) {
             }
         }
 
-        let data = fhirpath.evaluate(fhirData, expression, environment, fhirpath_r5_model, options);
-        if (data instanceof Promise){
-            data = await data;
+        // Evaluate using WASM
+        const evaluateResult = evaluateExpression(expression, fhirData, { format: 'json' });
+        if (!evaluateResult.success) {
+            return res.status(400).json(
+                CreateOperationOutcome('error', 'invalid', `Failed to evaluate expression: ${evaluateResult.error || 'Unknown error'}`)
+            );
+        }
+
+        // Extract results from WASM result object
+        let data: any[] = [];
+        if (evaluateResult.value) {
+            if (Array.isArray(evaluateResult.value)) {
+                data = evaluateResult.value;
+            } else if (typeof evaluateResult.value === 'object') {
+                const resultObj = evaluateResult.value as any;
+                // WASM returns {result: [...], count: N, trace: [], type: 'collection'}
+                if (resultObj.result && Array.isArray(resultObj.result)) {
+                    data = resultObj.result;
+                } else {
+                    data = [evaluateResult.value];
+                }
+            } else {
+                data = [evaluateResult.value];
+            }
         }
         console.log('FHIRPath evaluation result:', data);
 
-        let logData = [];
-        for (let traceData of debugTraceOutput) {
-            logData.push(formatTrace(expression, traceData));
-        }
-        console.log(logData);
-
-        // push the results into the parameters resource
-        const finalResult = debugTraceOutput[debugTraceOutput.length - 1];
-        if (finalResult && finalResult.values && finalResult.values.length > 0) {
-            finalResult.values.forEach((item: any) => {
+        // Process results - convert WASM result format to FHIR Parameters
+        if (Array.isArray(data)) {
+            data.forEach((item: any) => {
+                // Handle WASM wrapper format for single values
+                let actualValue = item;
+                if (typeof item === 'object' && item !== null && item.result !== undefined) {
+                    actualValue = item.result;
+                }
+                
                 let retVal: ParametersParameter = {
-                    name: item.fhirNodeDataType ?? item.valueType ?? 'string',
+                    name: typeof actualValue === 'string' ? 'string' : 'value',
                 };
-                SetParameterValue(retVal, item, true);
+                
+                if (typeof actualValue === 'string') {
+                    retVal.valueString = actualValue;
+                } else if (typeof actualValue === 'boolean') {
+                    retVal.valueBoolean = actualValue;
+                    retVal.name = 'boolean';
+                } else if (typeof actualValue === 'number') {
+                    if (Number.isInteger(actualValue)) {
+                        retVal.valueInteger = actualValue;
+                        retVal.name = 'integer';
+                    } else {
+                        retVal.valueDecimal = actualValue;
+                        retVal.name = 'decimal';
+                    }
+                } else {
+                    // Complex object - store as JSON extension
+                    retVal.extension = [
+                        {
+                            url: "http://fhir.forms-lab.com/StructureDefinition/json-value",
+                            valueString: stringifySafe(actualValue, 2)
+                        }
+                    ];
+                }
+                
                 result.parameter![1].part!.push(retVal);
             });
-        } else {
-            // Fallback to the legacy result returned in the data variable
-            if (data && data.length > 0) {
-                data.forEach((item: any) => {
-                    let retVal: ParametersParameter = {
-                        name: item.fhirNodeDataType ?? item.valueType ?? 'string',
-                    };
-                    SetParameterValue(retVal, item, true);
-                    result.parameter![1].part!.push(retVal);
-                });
-            }
         }
 
-        // inject the trace() data
-        if (traceData && traceData.length > 0) {
-            for (let item of traceData) {
-                let valTrace: ParametersParameter = {
-                    name: 'trace',
-                    valueString: item.label,
-                    part: []
-                };
-                result.parameter![1].part!.push(valTrace);
-
-                for (let value of item.value) {
-                    let retVal: ParametersParameter = {
-                        name: value.fhirNodeDataType ?? 'string',
-                    };
-                    SetParameterValue(retVal, value, true);
-                    valTrace.part!.push(retVal);
-                }
-            }
-        }
-
-        // and push the debugger trace content in too
+        // Note: Debug trace is not available with WASM engine
         let debugTrace: ParametersParameter = {
             name: 'debug-trace',
             part: []
         };
-        for (let item of debugTraceOutput) {
-            let itemPart: ParametersParameter = {
-                name: nodeName(expression, item),
-                part: []
-            };
-            debugTrace.part!.push(itemPart);
-
-            // add the values into the traced debug item
-            item.values.forEach((item: any) => {
-                let retVal: ParametersParameter = {
-                    name: item.fhirNodeDataType ?? item.valueType ?? 'string',
-                };
-                SetParameterValue(retVal, item, false);
-                itemPart.part!.push(retVal);
-            });
-
-            item.thisVar.forEach((item: any) => {
-                let retVal: ParametersParameter = {
-                    name: item.fhirNodeDataType ?? item.valueType ?? 'string',
-                };
-                SetParameterValue(retVal, item, false);
-                retVal.name = 'this-' + retVal.name;
-                itemPart.part!.push(retVal);
-            });
-
-            item.focusVar.forEach((item: any) => {
-                let retVal: ParametersParameter = {
-                    name: item.fhirNodeDataType ?? item.valueType ?? 'string',
-                };
-                SetParameterValue(retVal, item, false);
-                retVal.name = 'focus-' + retVal.name;
-                itemPart.part!.push(retVal);
-            });
-
-            if (item.indexVar !== undefined) {
-                let retVal: ParametersParameter = {
-                    name: 'index',
-                    valueInteger: item.indexVar
-                };
-                itemPart.part!.push(retVal);
-            }
-        }
         result.parameter!.push(debugTrace);
 
         res.setHeader('Content-Type', 'application/fhir+json')
@@ -306,175 +262,6 @@ export async function processFhirPathRequest(req: Request, res: Response) {
         res.status(400).json(
             CreateOperationOutcome('error', 'invalid', `Error processing request: ${errorMessage}`)
         )
-    }
-}
-
-function SetParameterValue(retVal: ParametersParameter, item: any, fullData: boolean) {
-    retVal.name = item.fhirNodeDataType ?? item.valueType ?? 'string';
-    if (item.resourcePath) {
-        // add in the resource path extension
-        retVal.extension = [
-            {
-                url: 'http://fhir.forms-lab.com/StructureDefinition/resource-path',
-                valueString: item.resourcePath
-            }
-        ];
-    }
-    if (item.fhirNodeDataType !== undefined) {
-
-        switch (item.fhirNodeDataType)
-        {
-            case 'string':
-            case 'System.String':
-            case 'String':
-                retVal.valueString = item.rawData;
-                break;
-            case 'boolean':
-                retVal.valueBoolean = item.rawData === true;
-                break;
-            case 'code':
-                retVal.valueCode = item.value;
-                break;
-            case 'date':
-                retVal.valueDate = item.value;
-                break;
-            case 'instant':
-                retVal.valueInstant = item.value;
-                break;
-            case 'dateTime':
-                retVal.valueDateTime = item.value;
-                break;
-            case 'time':
-                retVal.valueTime = item.value;
-                break;
-            case 'integer':
-                retVal.valueInteger = item.value;
-                break;
-            case 'decimal':
-                retVal.valueDecimal = item.value;
-                break;
-            case 'Quantity':
-                retVal.valueQuantity = item.value;
-                break;
-            case 'HumanName':
-                retVal.valueHumanName = item.value;
-                break;
-            default:
-                if (fullData){
-                    retVal.extension = retVal.extension ?? [];
-                    let extResourceData: Extension = {
-                        url: "http://fhir.forms-lab.com/StructureDefinition/json-value",
-                        valueString: stringifySafe(item.rawData ?? item.value ?? item, 2)
-                    };
-                    retVal.extension.push(extResourceData);
-                }
-                else if (item.resourcePath) {
-                    retVal.name = 'resource-path';
-                    retVal.valueString = item.resourcePath;
-                    delete retVal.extension;
-                }
-                break;
-        }
-    } else {
-        if (item.valueType === 'String')
-            retVal.valueString = item.rawData;
-        else if (item.valueType === 'Boolean')
-            retVal.valueBoolean = item.rawData;
-        else if (item.valueType === 'date' || item.valueType === 'Date') {
-            retVal.valueDate = item.rawData;
-            retVal.name = 'date';
-        }
-        else if (item.valueType === 'dateTime' || item.valueType === 'DateTime') {
-            retVal.valueDateTime = item.rawData;
-            retVal.name = 'dateTime';
-        }
-        else if (item.valueType === 'time' || item.valueType === 'Time') {
-            retVal.valueTime = item.rawData;
-            retVal.name = 'time';
-        }
-        else if (item.valueType === 'integer' || item.valueType === 'Integer') {
-            retVal.valueInteger = item.rawData;
-            retVal.name = 'integer';
-        }
-        else if (item.valueType === 'Decimal') {
-            retVal.valueDecimal = item.rawData;
-            retVal.name = 'decimal';
-        }
-        else if (item.valueType === 'Long') {
-            retVal.valueInteger = item.rawData.toString();
-            retVal.name = 'integer';
-        }
-        else if (item.valueType === 'Number') {
-            const val = item.rawData ?? item.value ?? item;
-            if (Number.isInteger(val) && val.toString().indexOf('.') === -1) {
-                retVal.valueInteger = val;
-                retVal.name = 'integer';
-            } else {
-                retVal.valueDecimal = Number.parseFloat(val);
-                retVal.name = 'decimal';
-            }
-        }
-        else if (item.valueType === 'Quantity') {
-            retVal.valueQuantity = {
-                value: item.rawData.value,
-                unit: item.rawData.unit,
-                system: 'http://unitsofmeasure.org',
-                code: item.rawData.unit,
-            };
-            if (!item.rawData.unit.startsWith("'")){
-                // this is a calendar unit
-                retVal.valueQuantity.system = "http://hl7.org/fhirpath/CodeSystem/calendar-units";
-            }
-            retVal.name = 'Quantity';
-        }
-        else {
-            if (item instanceof FP_Instant) {
-                retVal.valueInstant = item.asStr;
-                retVal.name = 'instant';
-            }
-            else if (item instanceof FP_Date) {
-                retVal.valueDate = item.asStr;
-                retVal.name = 'date';
-            }
-            else if (item instanceof FP_DateTime) {
-                retVal.valueDateTime = item.asStr;
-                retVal.name = 'dateTime';
-            }
-            else if (item instanceof FP_Time) {
-                retVal.valueTime = item.asStr;
-                retVal.name = 'time';
-            }
-            else if (item instanceof FP_Quantity) {
-                retVal.valueQuantity = {
-                    value: item.value,
-                    unit: item.unit,
-                    system: "http://unitsofmeasure.org",
-                    code: item.unit
-                };
-                if (!item.unit.startsWith("'")){
-                    // this is a calendar unit
-                    retVal.valueQuantity.system = "http://hl7.org/fhirpath/CodeSystem/calendar-units";
-                }
-                retVal.name = 'Quantity';
-            }
-            else {
-                if (fullData) {
-                    // this is the just throw it in as JSON stage
-                    retVal.extension = retVal.extension ?? [];
-                    let extResourceData: Extension = {
-                        url: "http://fhir.forms-lab.com/StructureDefinition/json-value",
-                        valueString: stringifySafe(item.rawData ?? item.value ?? item, 2)
-                    };
-                    retVal.extension.push(extResourceData);
-                }
-                else if (item.resourcePath) {
-                    retVal.name = 'resource-path';
-                    retVal.valueString = item.resourcePath;
-                    delete retVal.extension;
-                }
-            }
-        }
-        // retVal.valueString = item.rawData ?? JSON.stringify(item, null, 2);
     }
 }
 
@@ -491,179 +278,4 @@ export interface JsonNode {
 
   /** URL to the Specification for this node - Augmented by the Lab */
   SpecUrl?: string;
-}
-
-function ConvertFhirPathJsToAst(ast: fpjsNode): JsonNode {
-  let result: JsonNode = {
-    ExpressionType: ast.type,
-    Name: ast.text ?? ast.delimitedText ?? "",
-    Arguments: [],
-    // ReturnType: "",
-  };
-
-  if (ast.length) {
-    result.Length = ast.length;
-  }
-
-  if (ast.start) {
-    result.Line = ast.start.line;
-    result.Column = ast.start.column;
-  }
-
-  // convert all the child nodes
-  if (ast.children) {
-    ast.children.forEach((element: fpjsNode) => {
-      result.Arguments?.push(ConvertFhirPathJsToAst(element));
-    });
-  } else {
-    delete result.Arguments;
-  }
-
-  // Populate the Type for known types
-  switch (result.ExpressionType) {
-    case "StringLiteral":
-      result.ReturnType = "string";
-      result.ExpressionType = "ConstantExpression";
-      result.Name = result.Name.substring(1, result.Name.length - 1);
-      break;
-    case "BooleanLiteral":
-      result.ReturnType = "boolean";
-      result.ExpressionType = "ConstantExpression";
-      break;
-    case "QuantityLiteral":
-      result.ReturnType = "Quantity";
-      result.ExpressionType = "ConstantExpression";
-      if (result.Arguments && result.Arguments.length > 0) {
-        result.Name = result.Arguments[0].Name;
-      }
-      delete result.Arguments;
-      return result;
-      break;
-    case "DateTimeLiteral":
-      result.ReturnType = "dateTime";
-      result.ExpressionType = "ConstantExpression";
-      result.Name = result.Name.substring(1);
-      break;
-    case "TimeLiteral":
-      result.ReturnType = "time";
-      result.ExpressionType = "ConstantExpression";
-      result.Name = result.Name.substring(2);
-      break;
-    case "NumberLiteral":
-      result.ReturnType = "Number (decimal or integer)";
-      result.ExpressionType = "ConstantExpression";
-      break;
-  }
-
-  // Short circuit some of the AST that is not useful to display
-  if (
-    result.Arguments?.length == 1 &&
-    result.ExpressionType == "FunctionInvocation"
-  ) {
-    return result.Arguments[0];
-  }
-  if (result.Arguments?.length == 1 && result.ExpressionType == "Quantity") {
-    result.Name = result.Name + " " + result.Arguments[0].Name;
-    delete result.Arguments;
-    return result;
-  }
-  if (result.Arguments?.length == 1 && result.ExpressionType == "Unit") {
-    return result.Arguments[0];
-  }
-  if (result.Arguments?.length == 1 && result.ExpressionType == "LiteralTerm") {
-    result.Arguments[0].Line = result.Line;
-    result.Arguments[0].Column = result.Column;
-    result.Arguments[0].Length = result.Length;
-    return result.Arguments[0];
-  }
-  if (
-    result.Arguments?.length == 1 &&
-    result.ExpressionType == "TermExpression"
-  ) {
-    return result.Arguments[0];
-  }
-  if (
-    result.Arguments?.length == 1 &&
-    result.ExpressionType == "ExternalConstantTerm"
-  ) {
-    return result.Arguments[0];
-  }
-
-  if (
-    result.ExpressionType == "MemberInvocation" &&
-    result.Arguments &&
-    result.Arguments.length === 1 &&
-    result.Arguments[0].ExpressionType == "Identifier"
-  ) {
-    result.ExpressionType = "ChildExpression";
-    result.Name = result.Arguments[0].Name ?? "";
-    delete result.Arguments;
-  }
-
-  if (
-    result.ExpressionType == "ExternalConstant" &&
-    result.Arguments &&
-    result.Arguments.length === 1 &&
-    result.Arguments[0].ExpressionType == "Identifier"
-  ) {
-    result.ExpressionType = "VariableRefExpression";
-    result.Name = result.Arguments[0].Name ?? "";
-    delete result.Arguments;
-  }
-
-  // restructure the function call part of the tree
-  if (
-    result.ExpressionType == "Functn" &&
-    result.Arguments &&
-    result.Arguments.length === 2 &&
-    result.Arguments[0].ExpressionType == "Identifier" &&
-    result.Arguments[1].ExpressionType == "ParamList"
-  ) {
-    result.ExpressionType = "FunctionCallExpression";
-    result.Name = result.Arguments[0].Name ?? "";
-    result.Line = result.Arguments[0].Line;
-    result.Column = result.Arguments[0].Column;
-    result.Length = result.Arguments[0].Length;
-    result.Arguments = result.Arguments[1].Arguments;
-  }
-  if (
-    result.ExpressionType == "Functn" &&
-    result.Arguments &&
-    result.Arguments.length === 1 &&
-    result.Arguments[0].ExpressionType == "Identifier"
-  ) {
-    result.ExpressionType = "FunctionCallExpression";
-    result.Name = result.Arguments[0].Name ?? "";
-    delete result.Arguments;
-  }
-
-  if (
-    result.Arguments?.length == 1 &&
-    result.ExpressionType == "InvocationTerm" // this is the "scoping node"
-  ) {
-    // inject the scoping node into the tree
-    let scopeNode: JsonNode = {
-      ExpressionType: "AxisExpression",
-      Name: "builtin.that",
-      Arguments: [],
-      ReturnType: "",
-    };
-    if (result.Arguments[0].Arguments)
-      result.Arguments[0].Arguments?.unshift(scopeNode);
-    else result.Arguments[0].Arguments = [scopeNode];
-    return result.Arguments[0];
-  }
-
-  // -----------
-  if (
-    result.ExpressionType == "InvocationExpression" &&
-    result.Arguments &&
-    result.Arguments?.length > 1
-  ) {
-    if (result.Arguments[1].Arguments)
-      result.Arguments[1].Arguments?.unshift(result.Arguments[0]);
-    else result.Arguments[1].Arguments = [result.Arguments[0]];
-    return result.Arguments[1];
-  }
-  return result;
 }
