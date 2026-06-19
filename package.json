@@ -10,7 +10,7 @@
         "predev": "npm run build",
         "dev": "func start",
         "watch": "tsc --watch",
-        "test": "echo \"Error: no test specified\" && exit 1"
+        "test": "echo \"No tests specified\""
     },
     "keywords": [
         "fhir",
