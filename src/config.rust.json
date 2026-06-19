@@ -1,13 +1,13 @@
 {
 	"engines": {
 		"Local (R5)": {
-			"name": "Localhost",
-			"legacyName": "Local (R5)",
+			"name": "ReasonHealth",
+			"legacyName": "ReasonHealth (R5)",
 			"fhirVersion": "R5",
-			"appInsightsEngineName": "Local",
+			"appInsightsEngineName": "ReasonHealth",
 			"publisher": "Reason Health",
 			"configSetting": "local_r5",
-			"description": "Your own locally hosted Azure Functions FHIRPath engine.",
+			"description": "A Rust based FHIRPath engine",
 			"external": true,
 			"supportsAST": true,
 			"supportsXML": false
