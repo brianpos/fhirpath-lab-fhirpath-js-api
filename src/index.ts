@@ -20,10 +20,31 @@ async function rustR5Handler(request: HttpRequest): Promise<HttpResponseInit> {
     }
 }
 
-async function labConfigHandler(): Promise<HttpResponseInit> {
+function getServiceBaseUrl(request: HttpRequest): string {
+    const forwardedProto = request.headers.get('x-forwarded-proto');
+    const forwardedHost = request.headers.get('x-forwarded-host');
+    if (forwardedProto && forwardedHost) {
+        return `${forwardedProto}://${forwardedHost}`;
+    }
+
+    const originMatch = request.url.match(/^https?:\/\/[^/]+/i);
+    if (originMatch?.[0]) {
+        return originMatch[0];
+    }
+
+    return 'http://localhost:7071';
+}
+
+async function labConfigHandler(request: HttpRequest): Promise<HttpResponseInit> {
+    const serviceBaseUrl = getServiceBaseUrl(request);
+    const resolvedConfig = {
+        ...configRust,
+        local_r5: `${serviceBaseUrl}/$rust-r5`
+    };
+
     return {
         status: 200,
-        jsonBody: configRust
+        jsonBody: resolvedConfig
     };
 }
 
