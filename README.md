@@ -1,17 +1,17 @@
-# FHIR Path JS API
+# FHIR Path Azure Function API
 
-A Node.js TypeScript API server for experimenting with FHIRPath expressions using the `@reasonhealth/fhirpath` WASM implementation.
+A Node.js TypeScript Azure Functions API for experimenting with FHIRPath expressions using the `@reasonhealth/fhirpath` WASM implementation.
 Specifically it implements the API defined to run with the Fhirpath-lab:
 > https://github.com/brianpos/fhirpath-lab/blob/master/server-api.md
 
 ## Overview
 
-This project provides a REST API that evaluates FHIRPath expressions against FHIR resources. It uses the **Reason Health FHIRPath WebAssembly implementation** (`@reasonhealth/fhirpath`) which provides a performant Rust-based FHIRPath engine compiled to WebAssembly.
+This project provides a minimal Azure Functions HTTP API that evaluates FHIRPath expressions against FHIR resources. It uses the **Reason Health FHIRPath WebAssembly implementation** (`@reasonhealth/fhirpath`) which provides a performant Rust-based FHIRPath engine compiled to WebAssembly.
 
 ### Key Features
 
 - **WASM-based FHIRPath Engine**: Fast, reliable FHIRPath evaluation using Rust + WebAssembly
-- **REST API**: Simple POST endpoint for evaluating FHIRPath expressions
+- **Azure Functions HTTP API**: Minimal serverless endpoint surface for FHIRPath evaluation
 - **FHIR Parameters Format**: Standard FHIR Parameters resource for input/output
 - **Expression Parsing**: Parse FHIRPath expressions to get AST
 - **Error Handling**: Proper FHIR OperationOutcome responses for errors
@@ -22,15 +22,12 @@ This project provides a REST API that evaluates FHIRPath expressions against FHI
 
 ```
 src/
-├── index.ts                # Main Express server and routes
+├── index.ts                # Azure Functions HTTP triggers and routes
 ├── fhirpath-service.ts     # FHIRPath evaluation logic
 ├── utils.ts                # Utility functions (OperationOutcome creation)
 ├── debug-tracer.ts         # Debug utilities and formatting
 └── types.d.ts              # TypeScript definitions
-.vscode/
-└── launch.json             # VS Code debugging configurations
-.github/
-└── copilot-instructions.md # AI coding agent instructions
+host.json                   # Azure Functions host configuration
 ```
 
 ## Setup
@@ -45,27 +42,24 @@ src/
    npm run build
    ```
 
-3. Start the development server (with auto-reload):
+3. Start the local Functions host:
    ```bash
    npm run dev
    ```
 
-4. Or start the production server:
+4. Or start the local Functions host via the default script:
    ```bash
    npm start
    ```
 
-The server will run on `http://localhost:3000` by default.
+The local host will run on `http://localhost:7071` by default and requires Azure Functions Core Tools.
 
 ## API Endpoints
 
-### GET /
-Returns basic information about the API and available endpoints.
+### GET /lab-config
+Returns the static FHIRPath Lab configuration for the R5 endpoint.
 
-### GET /health
-Health check endpoint.
-
-### POST /$fhirpath-r5
+### POST /$rust-r5
 Evaluates a FHIRPath expression against provided FHIR data.
 
 **Request Body (FHIR Parameters resource):**
@@ -158,40 +152,21 @@ The response includes:
 ## Scripts
 
 - `npm run build` - Compile TypeScript to JavaScript
-- `npm start` - Start the production server
-- `npm run dev` - Start development server with auto-reload
-- `npm run dev:debug` - Start development server with debugging enabled
+- `npm start` - Build and start the local Azure Functions host
+- `npm run dev` - Build and start the local Azure Functions host
 - `npm run watch` - Watch for TypeScript changes and recompile
 
-## Debugging in VS Code
+## Local Development Notes
 
-The project includes three VS Code launch configurations for debugging:
-
-1. **"Debug API Server"** - Builds TypeScript first, then debugs the compiled JavaScript
-   - Most reliable for breakpoints
-   - Uses source maps for TypeScript debugging
-
-2. **"Debug with ts-node"** - Debugs TypeScript directly using ts-node/register
-   - Faster startup (no build step)
-   - Enhanced source map configuration for better breakpoint support
-
-3. **"Debug with ts-node-dev"** - Uses npm run dev:debug with inspect mode
-   - Auto-restart on file changes during debugging
-   - Good for iterative development
-
-### Setting Port for Debugging
-All debug configurations use port 3001 by default. You can change this in the launch.json file or by setting the PORT environment variable.
-
-### Debugging Tips
-- If breakpoints aren't working with ts-node configurations, try the "Debug API Server" option
-- Use `debugger;` statements in your code as an alternative to breakpoints
-- Console.log statements will appear in the VS Code integrated terminal
+- Azure Functions Core Tools are required to run `npm start` or `npm run dev`.
+- `host.json` removes the default `/api` prefix so the local endpoints are exactly `/$rust-r5` and `/lab-config`.
+- The included `config.rust.json` points the lab at `http://localhost:7071/$rust-r5`.
 
 ## Architecture Notes
 
 The project follows a clean separation of concerns:
 
-- **index.ts**: Express server setup, middleware, and route definitions
+- **index.ts**: Azure Functions route registration and HTTP request handling
 - **fhirpath-service.ts**: Core FHIRPath evaluation logic and request processing
 - **utils.ts**: Utility functions for FHIR operations (OperationOutcome creation, parameter value population)
 - **debug-tracer.ts**: Debug utilities and formatting system
@@ -201,7 +176,7 @@ This modular structure makes the code:
 - Easy to test (business logic separated from HTTP concerns)
 - Maintainable (clear responsibilities for each module)
 - Extensible (easy to add new endpoints or operations)
-- Debuggable (comprehensive logging and error handling)
+- Testable (transport-neutral evaluator logic behind the HTTP trigger)
 
 ## Using the WASM FHIRPath Engine
 
@@ -225,7 +200,7 @@ const ver = version(); // e.g., "0.2.0"
 // Parse a FHIRPath expression to get AST
 const parseResult = parseExpression("Patient.name.given", { format: 'json' });
 if (parseResult.success) {
-  console.log("AST:", parseResult.value);
+  const ast = parseResult.value;
 }
 
 // Evaluate a FHIRPath expression against a resource
@@ -235,7 +210,7 @@ const evalResult = evaluateExpression(
   { format: 'json' }
 );
 if (evalResult.success) {
-  console.log("Results:", evalResult.value);
+  const results = evalResult.value;
 }
 ```
 

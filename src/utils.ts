@@ -88,7 +88,6 @@ export function populateParameterValue(item: any, result: Parameters) {
         }
       }
       else {
-        console.log('populateParameterValue: unknown type: ', typeName, TypeInfo.fromValue(item));
         if (item instanceof FP_Instant) {
           retVal.valueInstant = item.asStr;
           typeName = 'instant';
@@ -118,6 +117,5 @@ export function populateParameterValue(item: any, result: Parameters) {
       retVal.name = typeName;
     }
     result.parameter[1].part?.push(retVal);
-    console.log('populateParameterValue: ', retVal);
   }
 }

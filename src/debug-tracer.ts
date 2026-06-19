@@ -76,10 +76,8 @@ export function debugTracer(traceOutput: IDebugTraceValue[]) {
       node.type !== "OrExpression" &&
       node.type !== "ImpliesExpression"
     ) {
-      // console.log("skipping " + node.type);
       return;
     }
-    console.log( node, focus, result);
     let debugTraceVal: IDebugTraceValue = {
       exprName: node.text??'',
       exprLength: node.length,

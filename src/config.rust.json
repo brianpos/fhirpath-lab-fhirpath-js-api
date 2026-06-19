@@ -1,0 +1,17 @@
+{
+	"engines": {
+		"Local (R5)": {
+			"name": "Localhost",
+			"legacyName": "Local (R5)",
+			"fhirVersion": "R5",
+			"appInsightsEngineName": "Local",
+			"publisher": "Reason Health",
+			"configSetting": "local_r5",
+			"description": "Your own locally hosted Azure Functions FHIRPath engine.",
+			"external": true,
+			"supportsAST": true,
+			"supportsXML": false
+		}
+	},
+	"local_r5": "http://localhost:7071/$rust-r5"
+}

@@ -4,7 +4,7 @@ This document provides example requests for the FHIRPath evaluation API using th
 
 ## Base URL
 ```
-http://localhost:3000/$fhirpath-r5
+http://localhost:7071/$rust-r5
 ```
 
 ## Example 1: Simple Property Access
@@ -12,7 +12,7 @@ http://localhost:3000/$fhirpath-r5
 **Expression:** Get all given names from a patient
 
 ```bash
-curl -X POST http://localhost:3000/\$fhirpath-r5 \
+curl -X POST http://localhost:7071/\$rust-r5 \
   -H "Content-Type: application/json" \
   -d '{
     "resourceType": "Parameters",
@@ -96,7 +96,7 @@ curl -X POST http://localhost:3000/\$fhirpath-r5 \
 **Expression:** Get family names where the given name is "John"
 
 ```bash
-curl -X POST http://localhost:3000/\$fhirpath-r5 \
+curl -X POST http://localhost:7071/\$rust-r5 \
   -H "Content-Type: application/json" \
   -d '{
     "resourceType": "Parameters",
@@ -172,7 +172,7 @@ curl -X POST http://localhost:3000/\$fhirpath-r5 \
 **Expression:** Count the number of names
 
 ```bash
-curl -X POST http://localhost:3000/\$fhirpath-r5 \
+curl -X POST http://localhost:7071/\$rust-r5 \
   -H "Content-Type: application/json" \
   -d '{
     "resourceType": "Parameters",
@@ -248,7 +248,7 @@ curl -X POST http://localhost:3000/\$fhirpath-r5 \
 **Expression:** Check if patient has active status
 
 ```bash
-curl -X POST http://localhost:3000/\$fhirpath-r5 \
+curl -X POST http://localhost:7071/\$rust-r5 \
   -H "Content-Type: application/json" \
   -d '{
     "resourceType": "Parameters",
@@ -321,7 +321,7 @@ curl -X POST http://localhost:3000/\$fhirpath-r5 \
 **Expression:** Get all observation codes and values
 
 ```bash
-curl -X POST http://localhost:3000/\$fhirpath-r5 \
+curl -X POST http://localhost:7071/\$rust-r5 \
   -H "Content-Type: application/json" \
   -d '{
     "resourceType": "Parameters",
@@ -364,7 +364,7 @@ curl -X POST http://localhost:3000/\$fhirpath-r5 \
 **Expression:** Compare patient name with variable
 
 ```bash
-curl -X POST http://localhost:3000/\$fhirpath-r5 \
+curl -X POST http://localhost:7071/\$rust-r5 \
   -H "Content-Type: application/json" \
   -d '{
     "resourceType": "Parameters",
@@ -444,7 +444,7 @@ curl -X POST http://localhost:3000/\$fhirpath-r5 \
 
 **Request:**
 ```bash
-curl -X POST http://localhost:3000/\$fhirpath-r5 \
+curl -X POST http://localhost:7071/\$rust-r5 \
   -H "Content-Type: application/json" \
   -d '{
     "resourceType": "Parameters",
@@ -485,7 +485,7 @@ curl -X POST http://localhost:3000/\$fhirpath-r5 \
 **Expression:** Get all addresses and their cities
 
 ```bash
-curl -X POST http://localhost:3000/\$fhirpath-r5 \
+curl -X POST http://localhost:7071/\$rust-r5 \
   -H "Content-Type: application/json" \
   -d '{
     "resourceType": "Parameters",

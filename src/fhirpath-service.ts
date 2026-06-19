@@ -1,45 +1,54 @@
 // FHIRPath evaluation service
 
 import { evaluateExpression, parseExpression, version } from "@reasonhealth/fhirpath";
-import express, { Request, Response } from 'express';
 import { CreateOperationOutcome } from './utils'
-import { Parameters, ParametersParameter, FhirResource, Extension } from 'fhir/r4b'
+import { Parameters, ParametersParameter, FhirResource, Extension, Resource } from 'fhir/r4b'
 import { stringifySafe } from "./debug-tracer";
 
 // Parameter extraction helper
 interface ExtractedParameters {
-  [key: string]: string | boolean | FhirResource | ParametersParameter[] | Extension[] | undefined;
+    [key: string]: string | boolean | FhirResource | Resource | ParametersParameter[] | Extension[] | undefined;
+}
+
+export interface ServiceResponse {
+    status: number;
+    headers: Record<string, string>;
+    jsonBody: Parameters | fhir4b.OperationOutcome;
+}
+
+const fhirJsonHeaders = {
+    'Content-Type': 'application/fhir+json'
+};
+
+function errorResponse(
+    code: "invalid" | "structure" | "required" | "value" | "invariant"
+        | "security" | "login" | "unknown" | "expired" | "forbidden" | "suppressed"
+        | "processing" | "not-supported" | "duplicate" | "multiple-matches" | "not-found" | "deleted" | "too-long" | "code-invalid" | "extension" | "too-costly" | "business-rule" | "conflict"
+        | "transient" | "lock-error" | "no-store" | "exception" | "timeout" | "incomplete" | "throttled"
+        | "informational",
+    message: string
+): ServiceResponse {
+    return {
+        status: 400,
+        headers: fhirJsonHeaders,
+        jsonBody: CreateOperationOutcome('error', code, message)
+    };
 }
 
 /**
  * Main function to process FHIRPath requests
  */
-export async function processFhirPathRequest(req: Request, res: Response) {
+export async function processFhirPathRequest(body: unknown): Promise<ServiceResponse> {
     try {
-        console.log('=== FHIRPath Request Debug ===')
-        console.log('Method:', req.method)
-        console.log('URL:', req.url)
-        console.log('Content-Type:', req.get('Content-Type'))
-        console.log('Body type:', typeof req.body)
-        console.log('Body:', req.body)
-        // console.log('Raw body exists:', !!req.body)
-        console.log('================================')
-
-        // Check if body exists
-        if (!req.body) {
-            console.log('ERROR: req.body is undefined or null')
-            return res.status(400).json(
-                CreateOperationOutcome('error', 'invalid', 'Request body is empty or malformed')
-            )
+        if (!body || typeof body !== 'object') {
+            return errorResponse('invalid', 'Request body is empty or malformed')
         }
 
-        const inputParameters = req.body as Parameters
+        const inputParameters = body as Parameters
 
         // Validate that it's a Parameters resource
         if (inputParameters.resourceType !== 'Parameters') {
-            return res.status(400).json(
-                CreateOperationOutcome('error', 'invalid', 'Expected FHIR Parameters resource')
-            )
+            return errorResponse('invalid', 'Expected FHIR Parameters resource')
         }
 
         // Extract parameters
@@ -50,15 +59,11 @@ export async function processFhirPathRequest(req: Request, res: Response) {
 
         // Validate required parameters
         if (!parameters.expression) {
-            return res.status(400).json(
-                CreateOperationOutcome('error', 'required', 'Missing required parameter: expression')
-            )
+            return errorResponse('required', 'Missing required parameter: expression')
         }
 
         if (!parameters.resource) {
-            return res.status(400).json(
-                CreateOperationOutcome('error', 'required', 'Missing required parameter: resource')
-            )
+            return errorResponse('required', 'Missing required parameter: resource')
         }
 
         // FHIRPath evaluation here
@@ -104,9 +109,7 @@ export async function processFhirPathRequest(req: Request, res: Response) {
         // Parse the expression using WASM
         const parseResult = parseExpression(expression, { format: 'json' });
         if (!parseResult.success || !parseResult.value) {
-            return res.status(400).json(
-                CreateOperationOutcome('error', 'invalid', `Failed to parse expression: ${parseResult.error || 'Unknown error'}`)
-            );
+            return errorResponse('invalid', `Failed to parse expression: ${parseResult.error || 'Unknown error'}`);
         }
 
         // inject the parsed AST into the parameters
@@ -119,8 +122,6 @@ export async function processFhirPathRequest(req: Request, res: Response) {
             valueString: JSON.stringify(parseResult.value, null, 2)
         });
 
-        console.log('Evaluating FHIRPath expression: ', expression);
-        
         // Build environment with variables
         let environment: Record<string, any> = { resource: fhirData, rootResource: fhirData };
 
@@ -183,9 +184,7 @@ export async function processFhirPathRequest(req: Request, res: Response) {
         // Evaluate using WASM
         const evaluateResult = evaluateExpression(expression, fhirData, { format: 'json' });
         if (!evaluateResult.success) {
-            return res.status(400).json(
-                CreateOperationOutcome('error', 'invalid', `Failed to evaluate expression: ${evaluateResult.error || 'Unknown error'}`)
-            );
+            return errorResponse('invalid', `Failed to evaluate expression: ${evaluateResult.error || 'Unknown error'}`);
         }
 
         // Extract results from WASM result object
@@ -205,8 +204,6 @@ export async function processFhirPathRequest(req: Request, res: Response) {
                 data = [evaluateResult.value];
             }
         }
-        console.log('FHIRPath evaluation result:', data);
-
         // Process results - convert WASM result format to FHIR Parameters
         if (Array.isArray(data)) {
             data.forEach((item: any) => {
@@ -254,14 +251,15 @@ export async function processFhirPathRequest(req: Request, res: Response) {
         };
         result.parameter!.push(debugTrace);
 
-        res.setHeader('Content-Type', 'application/fhir+json')
-        res.json(result)
+        return {
+            status: 200,
+            headers: fhirJsonHeaders,
+            jsonBody: result
+        };
 
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-        res.status(400).json(
-            CreateOperationOutcome('error', 'invalid', `Error processing request: ${errorMessage}`)
-        )
+        return errorResponse('invalid', `Error processing request: ${errorMessage}`)
     }
 }
 
