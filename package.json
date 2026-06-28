@@ -23,7 +23,7 @@
     "license": "ISC",
     "dependencies": {
         "@azure/functions": "^4.16.1",
-        "@reasonhealth/fhirpath": "^0.2.2",
+        "@reasonhealth/fhirpath": "^0.2.3",
         "@types/fhir": "^0.0.44",
         "fhirpath": "^4.11.0"
     },
